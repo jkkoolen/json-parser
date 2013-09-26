@@ -1,0 +1,215 @@
+PARSER_BEGIN(JSONHandler)
+
+package com.jkkoolen.json.parser;
+
+import com.jkkoolen.json.*;
+import java.io.*;
+
+//------------------------------------------------------------------------------
+// public
+//------------------------------------------------------------------------------
+public class
+JSONHandler
+{
+    private static String
+    unescape(String s)
+    {
+        StringBuilder sb= new StringBuilder(s.length());
+        for(int i=1;i< s.length()-1;++i)
+        {
+            if(s.charAt(i)=='\\')
+            {
+                if(i+1< s.length()-1)
+                {
+                    ++i;
+                    switch(s.charAt(i))
+                    {
+                        case '\n': sb.append('\n'); break;
+                        case '\r': sb.append('\r'); break;
+                        case '\\': sb.append('\\'); break;
+                        case 'b': sb.append('\b'); break;
+                        case 't': sb.append('\t'); break;
+                        case 'f': sb.append('\f'); break;
+                        case '\'': sb.append('\''); break;
+                        case '\"': sb.append('\"'); break;
+                        default: sb.append(s.charAt(i));
+                    }
+                }
+            }
+            else
+            {
+                sb.append(s.charAt(i));
+            }
+        }
+        return sb.toString();
+    }
+}
+
+PARSER_END(JSONHandler)
+
+
+SKIP :
+{
+  " "
+| "\t"
+| "\n"
+| "\r"
+}
+
+
+TOKEN  :
+{
+  <#LETTER: ["_","a"-"z","A"-"Z"] >
+| <#DIGIT: ["0"-"9"] >
+| <#SIGN: ["-","+"]>
+| <#EXPONENT: ("E"|"e") (<SIGN>)? (<DIGIT>)+ >
+| <FLOATING_NUMBER: (<DIGIT>)* "." (<DIGIT>)* (<EXPONENT>)?
+        | (<DIGIT>)+ (<EXPONENT>) >
+| <INT_NUMBER: (<DIGIT>)+ >
+| <IDENTIFIER: <LETTER> (<LETTER>|<DIGIT>|"-")* >
+| <#ESCAPE_CHAR: "\\" ["n","t","b","r","f","\\","'","\""] >
+| <SIMPLE_QUOTE_LITERAL:
+  "\'"
+      (   (~["\'","\\","\n","\r"])
+        | <ESCAPE_CHAR>
+      )*
+      "\'"
+  >
+|
+  <DOUBLE_QUOTE_LITERAL:
+      "\""
+      (   (~["\"","\\","\n","\r"])
+       | <ESCAPE_CHAR>
+      )*
+      "\""
+  >
+}
+
+//------------------------------------------------------------------------------
+JsonValue
+parse():
+{
+   JsonValue myValue;
+}
+{
+    (
+        myValue = JsonObject()
+        | myValue = JsonArray()
+        | myValue = JsonValue()
+    )
+    {
+        return myValue;
+    }
+}
+
+//------------------------------------------------------------------------------
+JsonValue
+JsonArray():
+{
+    JsonArray myArray = new JsonArray();
+    JsonValue myValue = null;
+}
+{
+   "["
+        ( myValue = parse()
+        {
+            myArray.add(myValue);
+        }
+        ("," myValue = parse()
+        {
+           myArray.add(myValue);
+        })*)?
+    "]"
+    {
+        return myArray;
+    }
+}
+
+//------------------------------------------------------------------------------
+JsonValue
+JsonObject():
+{
+    JsonObject myObject = new JsonObject();
+    String myKey = null;
+    JsonValue myValue = null;
+}
+{
+    "{" 
+        (myKey = string() ":" myValue = parse()
+        {
+            myObject.put(myKey, myValue);
+        } 
+        ("," myKey = string() ":" myValue = parse()
+        {
+            myObject.put(myKey, myValue);
+        })*)?
+
+    "}"
+    {
+        return myObject;
+    }
+}
+
+//------------------------------------------------------------------------------
+String
+string():
+{
+    Token myToken;
+}
+{
+    (
+        myToken = <SIMPLE_QUOTE_LITERAL>
+        | myToken = <DOUBLE_QUOTE_LITERAL>
+    )
+    {
+        return unescape(myToken.image);
+    }
+}
+
+//------------------------------------------------------------------------------
+JsonValue
+JsonValue():
+{
+    Token myToken = null;
+}
+{
+    (
+    myToken = <FLOATING_NUMBER>
+    {
+        return new JsonNumber(new Double(myToken.image).doubleValue());
+    }
+    | myToken = <INT_NUMBER>
+    {
+        Long myLong = new Long(myToken.image);
+        if(myLong > Integer.MAX_VALUE)
+        {
+            return new JsonNumber(myLong.longValue());
+        }
+        return new JsonNumber(myLong.intValue());
+    }
+    | myToken = <IDENTIFIER>
+    {
+        if(myToken.image.equals("true"))
+        {
+            return new JsonBoolean(true);
+        }
+        else if(myToken.image.equals("false"))
+        {
+            return new JsonBoolean(false);
+        }
+        else if(myToken.image.equals("null"))
+        {
+            return null;
+        }
+        return new JsonString(myToken.image);
+    }
+    | myToken = <SIMPLE_QUOTE_LITERAL>
+    {
+        return new JsonString(unescape(myToken.image));
+    }
+    | myToken = <DOUBLE_QUOTE_LITERAL>
+    {
+        return new JsonString(unescape(myToken.image));
+    }
+    )
+}
